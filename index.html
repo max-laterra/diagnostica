@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- La Terra – Diagnostica · versione 1.0 · 10 novembre 2026
+<!-- La Terra – Diagnostica · versione 1.1 · 11 novembre 2026
      Controlla app autisti, cartella Dropbox «Autisti La Terra», servizio notifiche (Cloudflare) e archivio Presenze (Supabase).
      Le impostazioni stanno nella pagina nascosta: 6 tocchi sulla scritta «Diagnostica» entro 4 secondi. -->
 <html lang="it">
@@ -122,7 +122,7 @@ details.sez[open]>summary .freccia{transform:rotate(90deg)}
 <script>
 (function(){
 "use strict";
-const VERSIONE="1.0";
+const VERSIONE="1.1";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
@@ -237,7 +237,8 @@ async function versioneOnline(url,re){
   let testo="";
   if(r.body&&r.body.getReader){const rd=r.body.getReader(),dec=new TextDecoder();while(testo.length<6000){const x=await rd.read();if(x.done)break;testo+=dec.decode(x.value,{stream:true});}try{rd.cancel();}catch(_){}}
   else testo=(await r.text()).slice(0,6000);
-  const m=re.exec(testo);return m?m[1]:"";
+  // dalla 1.1 anche quando è stata pubblicata (GitHub la dice nell'intestazione Last-Modified)
+  const m=re.exec(testo),t=Date.parse(r.headers.get("last-modified")||"");return {v:m?m[1]:"",mod:isNaN(t)?"":new Date(t).toISOString()};
 }
 
 // ============================================================
@@ -285,7 +286,7 @@ async function raccogli(){
   // versioni pubblicate
   const ind=indirizzi();R.versioni={};
   await Promise.all([["autisti",ind.autisti,/La Terra Autisti - versione (\d+(?:\.\d+)+)/],["presenze",ind.presenze,/Registro presenze · versione (\d+(?:\.\d+)+)/]].map(async([k,u,re])=>{
-    try{R.versioni[k]=await versioneOnline(u,re)||"?";}catch(e){R.versioni[k]="";R.versioni[k+"Err"]=e.message;}}));
+    try{const x=await versioneOnline(u,re);R.versioni[k]=x.v||"?";R.versioni[k+"At"]=x.mod;}catch(e){R.versioni[k]="";R.versioni[k+"Err"]=e.message;}}));
   return R;
 }
 function dispositivo(){const u=navigator.userAgent||"";return /iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac/.test(u)?"Mac":/Windows/.test(u)?"PC Windows":"computer";}
@@ -339,32 +340,82 @@ function analizza(R){
   }
   // ---------- autisti e telefoni ----------
   const AU={};const au=(slug,nome)=>{slug=idDi(slug);if(!slug)return null;const a=AU[slug]||(AU[slug]={slug,nome:"",telefoni:[],push:[],fogli:[]});if(nome&&!a.nome)a.nome=String(nome);return a;};
-  for(const t of R.telefoni){const j=t.j;if(t.nome===String(conn.p).toLowerCase()||/Servizio notifiche|Diagnostica/i.test(j.dispositivo||""))continue;const a=au(j.autista,j.autista);if(a)a.telefoni.push({p:t.nome,dispositivo:j.dispositivo||"",ultimo:j.ultimoAccesso||t.mod,collegato:j.collegatoAt||""});}
+  for(const t of R.telefoni){const j=t.j;if(t.nome===String(conn.p).toLowerCase()||/Servizio notifiche|Diagnostica/i.test(j.dispositivo||""))continue;const a=au(j.autista,j.autista);if(a)a.telefoni.push({p:t.nome,dispositivo:j.dispositivo||"",ultimo:j.ultimoAccesso||t.mod,collegato:j.collegatoAt||"",
+    // dalla app 1.18: versione esatta e com'è andato l'ultimo aggiornamento
+    app:verOk(j.app)?String(j.app):"",sinc:String(j.aggiornatoAt||""),daInv:Number(j.daInviare)||0,problema:j.problema&&j.problema.t?{at:String(j.problema.at||""),t:String(j.problema.t).slice(0,160)}:null});}
   for(const x of R.push){const j=x.j;const a=au(j.autistaId||j.autista,j.autista);if(a)a.push.push({tel:x.nome,spento:!!j.spento,domani:j.domani,at:j.at||x.mod,registrato:!!(st&&st.subs&&st.subs[x.nome]),chiaviVecchie:!!(st&&st.subs&&st.subs[x.nome]&&st.subs[x.nome].pub&&R.chiave&&st.subs[x.nome].pub!==R.chiave.pub),esito:st&&st.esiti&&st.esiti[x.nome]});}
-  for(const x of R.visti){const a=au(x.nome,x.j.autista);if(a)a.visti=x.j;}
+  for(const x of R.visti){const a=au(x.nome,x.j.autista);if(a){a.visti=x.j;a.vistiMod=x.mod;}}
   for(const x of R.presenze){const a=au(x.nome);if(a)a.presenze=(x.j&&x.j.giorni)||{};}
   for(const x of R.pasti){const m=/\/telefoni\/pasti\/([a-z0-9-]+)\//.exec(x.path);const a=m&&au(m[1]);if(a)a.pasti={giorni:(x.j&&x.j.giorni)||{},mod:x.mod};}
   for(const f of R.fogli){const ids=Array.isArray(f.j.autistiId)?f.j.autistiId:[],nomi=Array.isArray(f.j.autisti)?f.j.autisti:[];if(f.j.ritirato)continue;ids.forEach((id,i)=>{const a=au(id,nomi[i]);if(a)a.fogli.push(f);});}
   const lista=Object.values(AU).sort((a,b)=>(a.nome||a.slug).localeCompare(b.nome||b.slug,"it"));
-  const pubbl=R.versioni.autisti&&verOk(R.versioni.autisti)?R.versioni.autisti:"";
+  const pubbl=R.versioni.autisti&&verOk(R.versioni.autisti)?R.versioni.autisti:"",pubblAt=R.versioni.autistiAt||"";
+  // dalla 1.1: i dipendenti delle Presenze (dall'archivio o, se non è collegato, dal servizio notifiche)
+  const dipT=R.supa&&R.supa.dip&&R.supa.dip.length?R.supa.dip.map(d=>({id:String(d.id),nome:String(d.nome||""),k:chiaveNome(d.nome),eliminato:!!d.eliminato}))
+    :(po.dip||[]).map(d=>({id:String(d.id),nome:String(d.nome||""),k:String(d.k||chiaveNome(d.nome)),eliminato:!!d.via}));
+  const dipDiT=slug=>dipT.length?trovaDip(dipT,slug):null;
+  // dalla 1.1: collegamenti vecchi. Stessa persona (stesso dipendente nelle Presenze) con due nomi nell'Agenda,
+  // per esempio «Cascone Saro» e poi «Cascone Rosario»: è vecchio quello non usato da più di 2 giorni.
+  // Stesso nome con più telefoni: è vecchio il telefono non aperto da più di 7 giorni mentre un altro sì.
+  const ultimoDi=a=>a.telefoni.map(t=>t.ultimo).filter(Boolean).sort().pop()||"";
+  const dal=t=>{const d=new Date(t);return (d.getDate()===8||d.getDate()===11?"dall'":"dal ")+quando(t);}; // «dall'8 nov», «dal 9 nov»
+  {
+    const perDip={};lista.filter(a=>a.telefoni.length).forEach(a=>{const d=dipDiT(a.slug);if(d)(perDip[d.id]=perDip[d.id]||[]).push(a);});
+    Object.values(perDip).forEach(g=>{if(g.length<2)return;g.sort((x,y)=>ultimoDi(y).localeCompare(ultimoDi(x)));g.slice(1).forEach(a=>{if(minuti(ultimoDi(a))>2*1440)a.vecchioDi=g[0];});});
+    lista.forEach(a=>{if(a.vecchioDi||a.telefoni.length<2)return;const top=ultimoDi(a);a.telefoni.forEach(t=>{if(t.ultimo&&t.ultimo<top&&minuti(t.ultimo)>7*1440)t.vecchio=true;});});
+  }
   const prossimi=(a,n)=>a.fogli.filter(f=>(f.j.al||f.j.dal)>=oggi&&f.j.dal<=fra(n));
   {
     const s={autisti:[]};
     for(const a of lista){
       const nome=a.nome||a.slug,r={a,nome,stato:"ok",righe:[],azioni:[]};const segna=l=>{if(l==="err"||(l==="att"&&r.stato!=="err"))r.stato=l;};
-      const ult=a.telefoni.map(t=>t.ultimo).filter(Boolean).sort().pop();
+      // dalla 1.1: collegamento vecchio della stessa persona: nessun avviso su versione e notifiche, solo il tasto per toglierlo
+      if(a.vecchioDi){
+        const nuovo=a.vecchioDi.nome||a.vecchioDi.slug,ul=ultimoDi(a);r.stato="info";
+        r.righe.push("Collegamento vecchio: non si usa "+dal(ul)+". Ora usa il collegamento «"+nuovo+"».");
+        a.telefoni.forEach(t=>{r.righe.push("📱 "+(t.dispositivo||"telefono")+" · ultima apertura "+fa(t.ultimo));r.azioni.push(["vecchio:"+t.p+":"+a.slug+":1","Togli il collegamento vecchio"]);});
+        pb("info","Telefoni","«"+nome+"» è un collegamento vecchio di "+nuovo+" (non si usa "+dal(ul)+")","Se vuoi, toglilo con «Togli il collegamento vecchio» (sezione Autisti e telefoni) e blocca questo telefono anche nell'Agenda.");
+        s.autisti.push(r);continue;
+      }
+      const attivi=a.telefoni.filter(t=>!t.vecchio),ult=attivi.map(t=>t.ultimo).filter(Boolean).sort().pop()||"";
       if(!a.telefoni.length){r.righe.push("Nessun telefono collegato");if(prossimi(a,7).length){segna("att");pb("att","Telefoni",nome+" ha servizi nei prossimi giorni ma nessun telefono collegato","Collega il suo telefono dall'Agenda (Collega un telefono) e mandagli il link.");}else segna("info");}
       else{
-        a.telefoni.forEach(t=>r.righe.push("📱 "+(t.dispositivo||"telefono")+" · ultima apertura "+fa(t.ultimo)));
+        a.telefoni.forEach(t=>{
+          if(t.vecchio){r.righe.push("📱 "+(t.dispositivo||"telefono")+" · telefono vecchio, non aperto "+dal(t.ultimo));r.azioni.push(["vecchio:"+t.p+":"+a.slug+":0","Togli il telefono vecchio"]);return;}
+          r.righe.push("📱 "+(t.dispositivo||"telefono")+(t.app?" · app "+t.app:"")+" · ultima apertura "+fa(t.ultimo));
+          if(!t.app)return;
+          // dalla app 1.18 il telefono dice com'è andato l'ultimo aggiornamento
+          const finito=t.sinc&&t.sinc>=t.ultimo;
+          r.righe.push("↻ "+(finito?"Aggiornato ":"Ultimo aggiornamento riuscito ")+(t.sinc?fa(t.sinc):"mai")+" · "+(t.daInv?t.daInv+(t.daInv===1?" cosa da inviare":" cose da inviare"):"niente da inviare"));
+          if(t.problema)r.righe.push("✕ Ultimo problema "+fa(t.problema.at)+": "+t.problema.t);
+          if(t.problema&&!finito&&minuti(t.problema.at)<3*1440){segna("att");pb("att","Telefoni","Il telefono di "+nome+" non riesce ad aggiornarsi con l'ufficio: "+t.problema.t,"Fagli aprire l'app con internet e toccare «Aggiorna e invia adesso» nel Profilo. Se il problema resta, prendi nota del testo: serve per capire la causa.");}
+          else if(!finito&&minuti(t.ultimo)>15&&minuti(t.ultimo)<3*1440){segna("info");pb("info","Telefoni","Il telefono di "+nome+" si è aperto "+fa(t.ultimo)+" ma non ha finito di aggiornarsi","Succede se l'app viene chiusa subito o non c'è campo. Se si ripete, fagli toccare «Aggiorna e invia adesso» nel Profilo.");}
+        });
         const gg=minuti(ult)/1440;if(gg>3&&prossimi(a,3).length){segna("att");pb("att","Telefoni",nome+" non apre l'app da "+Math.round(gg)+" giorni e ha servizi a breve","Chiamalo: deve aprire l'app per ricevere i fogli.");}
       }
-      const ver=a.visti&&a.visti.app;
-      if(a.telefoni.length){
-        if(ver){r.righe.push("App "+ver);if(pubbl&&confrontaVer(ver,pubbl)<0){segna("att");pb("att","Telefoni","Il telefono di "+nome+" ha l'app "+ver+" (online c'è la "+pubbl+")","Fagli chiudere del tutto l'app e riaprirla dopo qualche minuto.");}}
-        else{r.righe.push("App 1.12 o precedente");if(pubbl){segna("att");pb("att","Telefoni","Il telefono di "+nome+" ha un'app vecchia (1.12 o precedente)","Fagli chiudere del tutto l'app e riaprirla dopo qualche minuto.");}}
+      // versione dell'app: esatta se il telefono ha la 1.18 o successiva, altrimenti l'ultima comunicata con le conferme dei riposi
+      if(attivi.length){
+        const conApp=attivi.filter(t=>t.app).sort((x,y)=>String(y.ultimo).localeCompare(String(x.ultimo))),vv=a.visti&&verOk(a.visti.app)?a.visti.app:"",vAt=(a.visti&&a.visti.updatedAt)||a.vistiMod||"";
+        const nonAperta=t=>pubblAt&&t&&t<pubblAt;
+        if(conApp.length){const t=conApp[0];
+          if(pubbl&&confrontaVer(t.app,pubbl)<0){
+            if(nonAperta(t.ultimo)){segna("info");r.righe.push("Non ha ancora aperto l'app dopo l'aggiornamento");pb("info","Telefoni",nome+" non ha ancora aperto l'app dopo l'aggiornamento del "+quando(pubblAt)+" (ha la "+t.app+")","Si aggiorna da sola la prossima volta che apre l'app.");}
+            else{segna("att");pb("att","Telefoni","Il telefono di "+nome+" apre ancora l'app "+t.app+" (online c'è la "+pubbl+")","Fagli chiudere del tutto l'app (anche dalle app aperte di recente) e riaprirla dopo qualche minuto.");}
+          }
+        }else if(vv){
+          r.righe.push("App "+vv+" · ultima versione comunicata dal telefono"+(vAt?", "+fa(vAt):""));
+          if(pubbl&&confrontaVer(vv,pubbl)<0){
+            if(nonAperta(ult)){segna("info");pb("info","Telefoni",nome+" non ha ancora aperto l'app dopo l'aggiornamento del "+quando(pubblAt),"Si aggiorna da sola la prossima volta che apre l'app.");}
+            else if(!pubblAt){segna("att");pb("att","Telefoni","Il telefono di "+nome+" ha comunicato l'app "+vv+(vAt?" ("+fa(vAt)+")":"")+", online c'è la "+pubbl,"Sul suo telefono: Profilo, guarda in fondo la versione e tocca «Aggiorna e invia adesso». Se in fondo c'è ancora la "+vv+", fagli chiudere del tutto l'app e riaprirla.");}
+            else{segna("att");pb("att","Telefoni",nome+" ha aperto l'app dopo l'aggiornamento, ma il telefono non ha ancora comunicato la versione nuova (l'ultima comunicata è la "+vv+(vAt?", "+fa(vAt):"")+")","Sul suo telefono: Profilo, guarda in fondo la versione e tocca «Aggiorna e invia adesso». Se in fondo c'è ancora la "+vv+", fagli chiudere del tutto l'app e riaprirla.");}
+          }
+        }else{
+          r.righe.push("App 1.12 o precedente");
+          if(pubbl&&!nonAperta(ult)){segna("att");pb("att","Telefoni","Il telefono di "+nome+" non ha mai comunicato la versione dell'app (1.12 o precedente)","Sul suo telefono: Profilo, guarda in fondo la versione. Se è vecchia, fagli chiudere del tutto l'app e riaprirla.");}
+        }
       }
-      const on=a.push.filter(p=>!p.spento);
-      if(a.telefoni.length&&!on.length){r.righe.push("🔕 Notifiche non attive");segna("att");pb("att","Telefoni",nome+" non ha le notifiche attive","Sul suo telefono: Profilo, tocca 6 volte «Profilo», Notifiche › Attiva le notifiche.");}
+      const vecchiTel=new Set(a.telefoni.filter(t=>t.vecchio).map(t=>t.p)),on=a.push.filter(p=>!p.spento&&!vecchiTel.has(p.tel));
+      if(attivi.length&&!on.length){r.righe.push("🔕 Notifiche non attive");segna("att");pb("att","Telefoni",nome+" non ha le notifiche attive","Sul suo telefono: Profilo, tocca 6 volte «Profilo», Notifiche › Attiva le notifiche.");}
       for(const p of on){
         r.righe.push("🔔 Notifiche attive"+(p.domani&&p.domani.on!==false?" · avviso del giorno prima alle "+(p.domani.ora||"20:00"):" · avviso del giorno prima spento"));
         if(!p.registrato&&minuti(p.at)>5&&!(p.esito&&(p.esito.stato===404||p.esito.stato===410))){segna("att");pb("att","Telefoni","Il servizio non ha ancora registrato le notifiche di "+nome,"Si sistema al prossimo giro; se resta, usa «Fai rileggere tutta la cartella».");}
@@ -435,13 +486,14 @@ function analizza(R){
   {
     const s={voci:[]},VIS=["RI","RC","RM"];
     for(const a of lista){
+      if(a.vecchioDi)continue; // dalla 1.1: collegamento vecchio
       const c=a.presenze&&a.presenze[domani];if(!VIS.includes(c))continue;
       const v=a.visti&&a.visti.giorni&&a.visti.giorni[domani],voluto=c==="RM"?"RM":"RI",nome=a.nome||a.slug;
       s.voci.push({nome,c,visto:v&&v.c===voluto?v.at:"",haApp:!!a.visti});
     }
     if(R.supa.pres)for(const p of R.supa.pres){
       if(String(p.giorno).slice(0,10)!==domani||!VIS.includes(p.codice))continue;
-      const a=lista.find(x=>{const d=dipDi(x.slug);return d&&d.id===String(p.dipendente_id);});
+      const a=lista.find(x=>{if(x.vecchioDi)return false;const d=dipDi(x.slug);return d&&d.id===String(p.dipendente_id);});
       if(!a||!a.telefoni.length)continue;
       const tel=a.presenze&&a.presenze[domani];
       if(!VIS.includes(tel)||(tel==="RM")!==(p.codice==="RM"))pb("err","Riposi","Il "+(p.codice==="RM"?"giorno in rimessa":"riposo")+" di domani di "+(a.nome||a.slug)+" segnato nelle Presenze non è arrivato al suo telefono","Usa «Rimanda i riposi a tutti i telefoni» (sezione Collegamento Presenze); se non basta, guarda gli errori del collegamento.");
@@ -452,6 +504,7 @@ function analizza(R){
   {
     const s={voci:[]};
     for(const a of lista){
+      if(a.vecchioDi)continue;
       const oggiServ=a.fogli.some(f=>f.j.dal<=oggi&&oggi<=(f.j.al||f.j.dal));if(!oggiServ)continue;
       const fermo=a.presenze&&a.presenze[oggi];if(fermo)continue;
       const g=a.pasti&&a.pasti.giorni&&a.pasti.giorni[oggi],n=g?(Number(g.po)||0)+(Number(g.pl)||0):0,nome=a.nome||a.slug;
@@ -467,8 +520,10 @@ function analizza(R){
     const s={righe:[]},v=R.versioni;
     if(!v.autisti)pb("att","Versioni","Non riesco a leggere la versione dell'app autisti pubblicata ("+(v.autistiErr||"?")+")","Controlla l'indirizzo in Impostazioni (6 tocchi su «Diagnostica»).");
     if(!v.presenze)pb("att","Versioni","Non riesco a leggere la versione dell'app Presenze pubblicata ("+(v.presenzeErr||"?")+")","Controlla l'indirizzo in Impostazioni (6 tocchi su «Diagnostica»).");
-    const perVer={};lista.filter(a=>a.telefoni.length).forEach(a=>{const k=(a.visti&&a.visti.app)||"1.12 o prec.";(perVer[k]=perVer[k]||[]).push(a.nome||a.slug);});
-    s.righe=[["App autisti online",v.autisti||"non letta"],["App Presenze online",v.presenze||"non letta"],["Servizio notifiche (Cloudflare)",(st&&st.versione)||"non indicata (1.9 o precedente)"],["Diagnostica",VERSIONE]]
+    // dalla 1.1: la versione esatta scritta dal telefono (app 1.18 o successiva), altrimenti l'ultima comunicata; i collegamenti vecchi non contano
+    const perVer={};lista.filter(a=>!a.vecchioDi&&a.telefoni.some(t=>!t.vecchio)).forEach(a=>{const t=a.telefoni.filter(t=>!t.vecchio&&t.app).sort((x,y)=>String(y.ultimo).localeCompare(String(x.ultimo)))[0];
+      const k=t?t.app:(a.visti&&a.visti.app?a.visti.app+" (comunicata)":"1.12 o prec.");(perVer[k]=perVer[k]||[]).push(a.nome||a.slug);});
+    s.righe=[["App autisti online",(v.autisti||"non letta")+(v.autistiAt?" · pubblicata il "+quando(v.autistiAt):"")],["App Presenze online",v.presenze||"non letta"],["Servizio notifiche (Cloudflare)",(st&&st.versione)||"non indicata (1.9 o precedente)"],["Diagnostica",VERSIONE]]
       .concat(Object.keys(perVer).sort().map(k=>["App "+k+" sui telefoni",perVer[k].join(", ")]));
     S.versioni=s;
   }
@@ -551,6 +606,19 @@ const RIP={
     fa:async()=>{const x=await scaricaJson(LUCCHETTO);if(x&&x.j&&minuti(x.j.da)<2)throw new Error("Il lucchetto è appena stato preso: il servizio sta lavorando");await cancella(LUCCHETTO);},ok:"Fatto: lucchetto tolto"}
 };
 async function ripara(k){
+  // dalla 1.1: togliere un collegamento vecchio (o un telefono vecchio): file del telefono, iscrizione alle notifiche
+  // e, per un collegamento vecchio, le sue conferme dei riposi. Il servizio notifiche toglie da solo l'iscrizione.
+  if(k.startsWith("vecchio:")){
+    const [,tel,slug,vis]=k.split(":");if(!/^[a-z0-9_-]+$/.test(tel||"")||!/^[a-z0-9-]+$/.test(slug||""))return;
+    if(tel===String(conn.p).toLowerCase())return toast("Questo è il collegamento della Diagnostica");
+    const x=await scaricaJson("/telefoni/"+tel+".json").catch(()=>null),j=(x&&x.j)||{};
+    if(/Servizio notifiche|Diagnostica/i.test(j.dispositivo||""))return toast("Questo collegamento non è di un autista");
+    const nome=j.autista||slug,tutto=vis==="1";
+    if(!(await chiedi(tutto?"Togliere il collegamento vecchio?":"Togliere il telefono vecchio?","Si tolgono dalla cartella il telefono «"+nome+"» ("+(j.dispositivo||"telefono")+", ultima apertura "+(j.ultimoAccesso?quando(j.ultimoAccesso):"mai")+") e la sua iscrizione alle notifiche"+(tutto?", insieme alle sue vecchie conferme dei riposi":"")+". Fogli, buste e crocette già fatti restano. Se quel telefono si riapre con questo collegamento torna da solo: per toglierlo del tutto bloccalo anche nell'Agenda.","Togli")))return;
+    try{await cancella("/telefoni/"+tel+".json");await cancella("/telefoni/push/"+tel+".json");if(tutto)await cancella("/telefoni/visti/"+slug+".json");
+      toast("Fatto: collegamento tolto");setTimeout(()=>controlla(true),2500);}catch(e){toast("Non riuscita: "+(e.message||e));}
+    return;
+  }
   if(k.startsWith("prova:")){
     const tel=k.slice(6),path="/telefoni/push/"+tel+".json",x=await scaricaJson(path);if(!x||!x.j)return toast("Iscrizione alle notifiche non trovata");
     const nome=x.j.autista||tel;

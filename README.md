@@ -1,13 +1,47 @@
 # La Terra – Diagnostica
 
-**Versione 1.0** — 10 novembre 2026
+**Versione 1.1** — 11 novembre 2026
 
-Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.0».
+Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.1».
 
 Serve a controllare, da telefono o da computer, che funzioni tutto:
 app degli autisti, cartella Dropbox «Autisti La Terra», servizio notifiche su
 Cloudflare e archivio dell'app Presenze (Supabase). Può anche fare qualche
 riparazione, sempre chiedendo conferma. L'Agenda non viene controllata.
+
+---
+
+## Modifiche della versione 1.1
+
+- **Collegamenti vecchi.** Se la stessa persona (lo stesso dipendente nelle
+  Presenze) è collegata con due nomi dell'Agenda, per esempio «Cascone Saro» e
+  poi «Cascone Rosario», quello non usato da più di 2 giorni è segnato come
+  **collegamento vecchio** (in blu, solo informazione): niente più avvisi di
+  «app vecchia» o di notifiche per un collegamento che non si usa.
+- **Telefoni vecchi.** Se lo stesso autista ha più telefoni e uno non si apre da
+  più di 7 giorni mentre un altro sì, quello è segnato come **telefono vecchio**.
+- **Nuovi tasti «Togli il collegamento vecchio» e «Togli il telefono
+  vecchio»** (con conferma): tolgono dalla cartella il file del telefono, la sua
+  iscrizione alle notifiche e, per un collegamento vecchio, le sue vecchie
+  conferme dei riposi. Fogli, buste e crocette restano. Il servizio notifiche
+  smette da solo di mandargli notifiche. Per toglierlo del tutto va **bloccato
+  anche nell'Agenda**, altrimenti se quel telefono si riapre torna.
+- **Versione dell'app per ogni telefono.** Con l'app autisti **1.18** il
+  telefono scrive la sua versione a ogni apertura, insieme all'ultimo
+  aggiornamento riuscito, alle cose da inviare e all'ultimo problema: la
+  Diagnostica li mostra e avvisa se un telefono non riesce ad aggiornarsi.
+- **Data di pubblicazione.** La Diagnostica legge da GitHub anche quando è stata
+  pubblicata l'app autisti e distingue:
+  - «non ha ancora aperto l'app dopo l'aggiornamento» (in blu: si aggiorna da
+    sola alla prossima apertura);
+  - «ha aperto l'app dopo l'aggiornamento ma non ha ancora comunicato la
+    versione nuova» (in giallo: sul telefono, Profilo › «Aggiorna e invia
+    adesso»);
+  - «apre ancora l'app vecchia» (in giallo: chiudere del tutto l'app e
+    riaprirla).
+- Nella sezione **Versioni**: la data di pubblicazione dell'app autisti e, per
+  ogni telefono, la versione esatta (o «comunicata» per i telefoni con l'app
+  1.17 o precedente).
 
 ---
 
@@ -71,6 +105,7 @@ Il controllo si rifà da solo ogni 2 minuti con l'app aperta, e con il tasto
 - **Rimanda i riposi a tutti i telefoni**.
 - **Ricopia le conferme nelle Presenze**.
 - **Notifica di prova** a un autista («Prova riuscita» sul suo telefono).
+- **Togli il collegamento vecchio / Togli il telefono vecchio** (dalla 1.1).
 
 Le riparazioni che toccano lo stato del servizio prendono il suo lucchetto,
 come fa il servizio a ogni giro: se il servizio sta lavorando, aspettano e, se
@@ -123,11 +158,20 @@ Su ogni dispositivo (telefono e computer) il primo avvio si fa una volta.
   aggiunge un servizio, va aggiunto lì.
 
 ## Collegata a
-- App autisti 1.13 o successiva (le versioni precedenti si vedono come
-  «1.12 o precedente»).
-- Servizio notifiche **1.10** (con la 1.9 mancano versione del servizio ed
+- App autisti **1.18** (con la 1.13–1.17 la versione si legge dalle conferme dei
+  riposi, come nella 1.0; le precedenti si vedono come «1.12 o precedente»).
+- Servizio notifiche **1.11** (con la 1.9 mancano versione del servizio ed
   esito dell'ultima notifica per telefono).
 - App Presenze 1.11.
+
+## Prove fatte prima della consegna (1.1)
+Con Dropbox, archivio Supabase, GitHub e servizio notifiche 1.11 simulati,
+66 controlli tutti superati: i 44 della 1.0 più 22 nuovi (collegamento vecchio
+della stessa persona riconosciuto e senza avvisi, telefono vecchio, telefono
+1.18 con un problema, versione esatta, data di pubblicazione con i tre casi
+«non ancora aperta», «aperta ma versione non comunicata» e «apre ancora la
+vecchia», tasti «Togli…» che tolgono solo i file giusti e il servizio che poi
+non manda più notifiche al collegamento vecchio).
 
 ## Prove fatte prima della consegna (1.0)
 Con Dropbox, archivio Supabase, GitHub e servizio notifiche 1.10 simulati,
