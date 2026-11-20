@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- La Terra – Diagnostica · versione 1.2 · 18 novembre 2026
+<!-- La Terra – Diagnostica · versione 1.3 · 20 novembre 2026
      Controlla app autisti, cartella Dropbox «Autisti La Terra», servizio notifiche (Cloudflare) e archivio Presenze (Supabase).
      Le impostazioni stanno nella pagina nascosta: 6 tocchi sulla scritta «Diagnostica» entro 4 secondi. -->
 <html lang="it">
@@ -122,7 +122,7 @@ details.sez[open]>summary .freccia{transform:rotate(90deg)}
 <script>
 (function(){
 "use strict";
-const VERSIONE="1.2";
+const VERSIONE="1.3";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
@@ -143,7 +143,7 @@ let toastT=null;
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),3200);}
 const lsG=k=>{try{return JSON.parse(localStorage.getItem(k)||"null");}catch(_){return null;}};
 const lsS=(k,v)=>{try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));}catch(_){}};
-const K={conn:"diag-collegamento",pw:"diag-pw",sess:"diag-sessione",supa:"diag-archivio",ind:"diag-indirizzi",tent:"diag-tentativi",cache:"diag-cache",blocco:"diag-bloccato"};
+const K={pubbl:"diag-pubblicata",conn:"diag-collegamento",pw:"diag-pw",sess:"diag-sessione",supa:"diag-archivio",ind:"diag-indirizzi",tent:"diag-tentativi",cache:"diag-cache",blocco:"diag-bloccato"};
 const IND_PRED={autisti:"https://max-laterra.github.io/autisti_prova/",presenze:"https://max-laterra.github.io/presenze/"};
 const indirizzi=()=>Object.assign({},IND_PRED,lsG(K.ind)||{});
 
@@ -202,9 +202,10 @@ async function scaricaJson(path){
 }
 async function scrivi(path,obj,modo){
   const r=await chiama(CONT+"/2/files/upload",{method:"POST",headers:{"Content-Type":"application/octet-stream","Dropbox-API-Arg":argH({path,mode:modo||"overwrite",autorename:false,mute:true})},body:JSON.stringify(obj)});
-  const t=await r.text();if(modo==="add"&&r.status===409)return false;if(!r.ok)throw new Error("Dropbox upload "+r.status);return true;
+  const t=await r.text();if((modo==="add"||(modo&&modo[".tag"]==="update"))&&r.status===409)return false;if(!r.ok)throw new Error("Dropbox upload "+r.status);
+  let m=null;try{m=JSON.parse(t);}catch(_){}return (m&&m.rev)||true;
 }
-async function cancella(path){const r=await chiama(API+"/2/files/delete_v2",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path})});await r.text();return r.ok;}
+async function cancella(path,rev){const r=await chiama(API+"/2/files/delete_v2",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(rev?{path,parent_rev:rev}:{path})});await r.text();return r.ok;} // con rev: solo se è ancora quello visto
 // tante richieste, ma al massimo 6 insieme
 async function aGruppi(lista,fn,n){const out=new Array(lista.length);let i=0;await Promise.all(Array.from({length:Math.min(n||6,lista.length)},async()=>{while(i<lista.length){const k=i++;try{out[k]=await fn(lista[k]);}catch(e){out[k]={errore:e};}}}));return out;}
 // i file che non cambiano non si riscaricano (stessa revisione)
@@ -286,7 +287,10 @@ async function raccogli(){
   // versioni pubblicate
   const ind=indirizzi();R.versioni={};
   await Promise.all([["autisti",ind.autisti,/La Terra Autisti - versione (\d+(?:\.\d+)+)/],["presenze",ind.presenze,/Registro presenze · versione (\d+(?:\.\d+)+)/]].map(async([k,u,re])=>{
-    try{const x=await versioneOnline(u,re);R.versioni[k]=x.v||"?";R.versioni[k+"At"]=x.mod;}catch(e){R.versioni[k]="";R.versioni[k+"Err"]=e.message;}}));
+    try{const x=await versioneOnline(u,re);R.versioni[k]=x.v||"";R.versioni[k+"At"]=x.mod;if(!x.v)R.versioni[k+"Err"]="nella pagina non trovo il numero di versione";}catch(e){R.versioni[k]="";R.versioni[k+"Err"]=e.message;}}));
+  // dalla 1.3: la data di pubblicazione è quella della prima volta che si vede questa versione (caricare su GitHub un altro file
+  // cambia la data di GitHub e faceva sembrare «non ha ancora aperto l'app» chi invece apre ancora la versione vecchia)
+  {const v=R.versioni.autisti,m=R.versioni.autistiAt||"";if(v&&verOk(v)){let x=lsG(K.pubbl)||{};if(x.v!==v||!x.at){x={v,at:m};if(m)lsS(K.pubbl,x);}R.versioni.autistiAt=x.at||m;}}
   return R;
 }
 function dispositivo(){const u=navigator.userAgent||"";return /iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac/.test(u)?"Mac":/Windows/.test(u)?"PC Windows":"computer";}
@@ -309,16 +313,18 @@ function analizza(R){
       if(m>10)pb("err","Servizio notifiche","Il servizio notifiche è fermo da "+fa(st.ultimo).replace(" fa",""),"Apri dash.cloudflare.com › Workers & Pages › notifiche-autisti › Logs. Se nell'Agenda è stato bloccato il telefono del servizio, crea un link nuovo e mettilo nel segreto LINK.");
       else if(m>3)pb("att","Servizio notifiche","L'ultimo giro del servizio è di "+fa(st.ultimo),"Di solito gira ogni minuto: ricontrolla tra poco.");
       if(st.errore&&st.errore.testo&&minuti(st.errore.at)<60)pb("att","Servizio notifiche","Errore del servizio "+fa(st.errore.at)+": "+st.errore.testo,"Se si ripete, guarda i Logs su Cloudflare.");
-      if(R.lucchetto&&minuti(R.lucchetto.da)>2){pb("att","Servizio notifiche","Il servizio risulta bloccato dal lucchetto da "+fa(R.lucchetto.da).replace(" fa",""),"Usa «Togli il lucchetto» qui sotto.");s.azioni.push(["lucchetto","Togli il lucchetto"]);}
+      if(R.lucchetto&&minuti(R.lucchetto.da)>3){/* dalla 1.3: 3 minuti (servizio 2.1) */pb("att","Servizio notifiche","Il servizio risulta bloccato dal lucchetto da "+fa(R.lucchetto.da).replace(" fa",""),"Usa «Togli il lucchetto» qui sotto.");s.azioni.push(["lucchetto","Togli il lucchetto"]);}
       if(!R.chiave||!R.chiave.pub)pb("att","Servizio notifiche","Mancano le chiavi delle notifiche","Si creano da sole al prossimo giro del servizio.");
+      const dq=(st.daScaricare||[]).length;if(dq>24)pb("att","Servizio notifiche","Il servizio sta rileggendo "+dq+" file della cartella (ancora circa "+Math.ceil(dq/12)+" minuti)","Normale dopo «Fai rileggere tutta la cartella». Intanto le notifiche possono tardare di qualche minuto.");
       const coda=(st.coda||[]).length;if(coda>15)pb("att","Servizio notifiche",coda+" notifiche in attesa di partire","Se restano a lungo, usa «Svuota le notifiche in attesa».");
       const ch=/^(\d+) su (\d+)/.exec(st.chiamate||"");if(ch&&Number(ch[1])>=Number(ch[2])-2)pb("info","Servizio notifiche","L'ultimo giro ha usato quasi tutte le chiamate permesse ("+ch[1]+" su "+ch[2]+")","Normale quando arrivano tanti fogli insieme: il resto lo fa al giro dopo.");
       const cm=st.campanelli||{};
       s.righe=[["Ultimo giro",st.ultimo?fa(st.ultimo)+" ("+quando(st.ultimo)+")":"mai"],["Versione",st.versione||"non indicata (1.9 o precedente)"],["Giri fatti",String(st.giri||0)],
         ["Chiamate nell'ultimo giro",st.chiamate||"—"],["Campanello Agenda (Dropbox)",cm.agenda?fa(cm.agenda):"mai suonato"],["Campanello Presenze",cm.presenze?fa(cm.presenze):"mai suonato"],
-        ["Fogli seguiti",String(Object.keys(st.fogli||{}).length)],["Telefoni con le notifiche",String(Object.keys(st.subs||{}).length)],["Notifiche in attesa",String(coda)],
+        ["Fogli seguiti",String(Object.keys(st.fogli||{}).length)],["Telefoni con le notifiche",String(Object.keys(st.subs||{}).length)],["Notifiche in attesa",String(coda)],["File da rileggere",String(dq)],
         ["Lucchetto",R.lucchetto?"preso "+fa(R.lucchetto.da):"libero"],["Ultimo errore",st.errore&&st.errore.testo?st.errore.testo+" ("+fa(st.errore.at)+")":"nessuno"]];
-      s.registro=(st.log||[]).slice(0,25);
+      // dalla 1.3: gli orari del registro sono scritti in ora di Greenwich: si mostrano in ora italiana
+      s.registro=(st.log||[]).slice(0,25).map(l=>String(l).replace(/^(\d{4}-\d\d-\d\dT\d\d:\d\d)/,x=>{const d=new Date(x+":00Z"),p=n=>String(n).padStart(2,"0");return isNaN(d)?x:p(d.getDate())+"/"+p(d.getMonth()+1)+" "+p(d.getHours())+":"+p(d.getMinutes());}));
       s.azioni.push(["rileggi","Fai rileggere tutta la cartella"],["coda","Svuota le notifiche in attesa"]);
     }
     S.servizio=s;
@@ -383,10 +389,13 @@ function analizza(R){
       if(!a.telefoni.length){r.righe.push("Nessun telefono collegato");if(prossimi(a,7).length){segna("att");pb("att","Telefoni",nome+" ha servizi nei prossimi giorni ma nessun telefono collegato","Collega il suo telefono dall'Agenda (Collega un telefono) e mandagli il link.");}else segna("info");}
       else{
         a.telefoni.forEach(t=>{
+          // dalla 1.3: un altro telefono (o collegamento nuovo) dello stesso autista si è aperto dopo e funziona
+          const superato=attivi.some(u=>u!==t&&!u.chiede&&u.ultimo&&u.ultimo>(t.chiede||t.ultimo||""));
           if(t.vecchio){r.righe.push("📱 "+(t.dispositivo||"telefono")+" · telefono vecchio, non aperto "+dal(t.ultimo));r.azioni.push(["vecchio:"+t.p+":"+a.slug+":0","Togli il telefono vecchio"]);return;}
           r.righe.push("📱 "+(t.dispositivo||"telefono")+(t.app?" · app "+t.app:"")+" · ultima apertura "+fa(t.ultimo));
           // dalla 1.2: app ferma sulla schermata della password = l'autista non vede i fogli nuovi
-          if(t.chiede){r.righe.push("🔒 Ferma sulla password "+dal(t.chiede));segna("err");
+          if(t.chiede&&superato){r.righe.push("🔒 Era ferma sulla password "+dal(t.chiede)+": ora usa un altro collegamento, che funziona");r.azioni.push(["vecchio:"+t.p+":"+a.slug+":0","Togli il telefono vecchio"]);}
+          else if(t.chiede){r.righe.push("🔒 Ferma sulla password "+dal(t.chiede));segna("err");
             pb("err","Telefoni","L'app di "+nome+" è ferma sulla password "+dal(t.chiede)+": non vede i fogli nuovi","Chiamalo: deve aprire l'app e scrivere la sua password. Con l'app 1.20 la password si chiede solo dopo «Esci» (pagina nascosta) o con un collegamento nuovo.");}
           if(t.protetti===true)r.righe.push("🛡 Dati dell'app protetti dal telefono");
           else if(t.protetti===false){r.righe.push("⚠ Dati dell'app non protetti dal telefono");
@@ -396,8 +405,8 @@ function analizza(R){
           const finito=t.sinc&&t.sinc>=t.ultimo;
           r.righe.push("↻ "+(finito?"Aggiornato ":"Ultimo aggiornamento riuscito ")+(t.sinc?fa(t.sinc):"mai")+" · "+(t.daInv?t.daInv+(t.daInv===1?" cosa da inviare":" cose da inviare"):"niente da inviare"));
           if(t.problema)r.righe.push("✕ Ultimo problema "+fa(t.problema.at)+": "+t.problema.t);
-          if(t.problema&&!finito&&minuti(t.problema.at)<3*1440){segna("att");pb("att","Telefoni","Il telefono di "+nome+" non riesce ad aggiornarsi con l'ufficio: "+t.problema.t,"Fagli aprire l'app con internet e toccare «Aggiorna e invia adesso» nel Profilo. Se il problema resta, prendi nota del testo: serve per capire la causa.");}
-          else if(!t.chiede&&!finito&&minuti(t.ultimo)>15&&minuti(t.ultimo)<3*1440){segna("info");pb("info","Telefoni","Il telefono di "+nome+" si è aperto "+fa(t.ultimo)+" ma non ha finito di aggiornarsi","Succede se l'app viene chiusa subito o non c'è campo. Se si ripete, fagli toccare «Aggiorna e invia adesso» nel Profilo.");}
+          if(t.problema&&!finito&&!superato&&minuti(t.problema.at)<3*1440){segna("att");pb("att","Telefoni","Il telefono di "+nome+" non riesce ad aggiornarsi con l'ufficio: "+t.problema.t,"Fagli aprire l'app con internet e toccare «Aggiorna e invia adesso» nel Profilo. Se il problema resta, prendi nota del testo: serve per capire la causa.");}
+          else if(!t.chiede&&!finito&&!superato&&minuti(t.ultimo)>15&&minuti(t.ultimo)<3*1440){segna("info");pb("info","Telefoni","Il telefono di "+nome+" si è aperto "+fa(t.ultimo)+" ma non ha finito di aggiornarsi","Succede se l'app viene chiusa subito o non c'è campo. Se si ripete, fagli toccare «Aggiorna e invia adesso» nel Profilo.");}
         });
         const gg=minuti(ult)/1440;if(gg>3&&prossimi(a,3).length){segna("att");pb("att","Telefoni",nome+" non apre l'app da "+Math.round(gg)+" giorni e ha servizi a breve","Chiamalo: deve aprire l'app per ricevere i fogli.");}
       }
@@ -428,7 +437,9 @@ function analizza(R){
         r.righe.push("🔔 Notifiche attive"+(p.domani&&p.domani.on!==false?" · avviso del giorno prima alle "+(p.domani.ora||"20:00"):" · avviso del giorno prima spento"));
         if(!p.registrato&&minuti(p.at)>5&&!(p.esito&&(p.esito.stato===404||p.esito.stato===410))){segna("att");pb("att","Telefoni","Il servizio non ha ancora registrato le notifiche di "+nome,"Si sistema al prossimo giro; se resta, usa «Fai rileggere tutta la cartella».");}
         if(p.chiaviVecchie){segna("att");pb("att","Telefoni",nome+" è iscritto alle notifiche con chiavi vecchie","Deve aprire l'app: si riiscrive da solo.");}
-        const e=p.esito;
+        let e=p.esito;
+        if(e&&(e.stato===404||e.stato===410)&&p.registrato&&p.at&&e.at&&String(p.at)>String(e.at)){r.righe.push("↻ Notifiche riattivate "+fa(p.at)+" dopo l'iscrizione scaduta: lo conferma la prossima notifica (puoi usare «Notifica di prova»)");e=null;}
+        if(e&&e.stato===0&&p.chiaviVecchie)e=null; // dalla 1.3: già detto con «chiavi vecchie»
         if(e){const okE=e.stato>=200&&e.stato<300;r.righe.push((okE?"✓ ":"✕ ")+"Ultima notifica «"+e.titolo+"» "+fa(e.at)+(okE?" consegnata":" non accettata ("+e.stato+(e.motivo?" "+e.motivo:"")+")"));
           if(!okE){const sc=e.stato===404||e.stato===410;segna(sc?"err":"att");pb(sc?"err":"att","Telefoni",sc?"Le notifiche di "+nome+" non arrivano più (iscrizione scaduta)":"L'ultima notifica a "+nome+" non è stata accettata ("+e.stato+")",sc?"Sul suo telefono: Impostazioni (6 tocchi su «Profilo») › Notifiche › Attiva le notifiche.":"Di solito è passeggero; prova «Notifica di prova».");}}
         r.azioni.push(["prova:"+p.tel,"Notifica di prova"]);
@@ -463,7 +474,7 @@ function analizza(R){
     const s={buste:[]};
     for(const f of R.fogli.filter(f=>f.j.busta&&!f.j.ritirato)){
       const j=f.j,sp=f.spese,finito=(j.al||j.dal)<oggi,nomi=(j.autisti||[]).join(", "),num=j.busta&&j.busta.n,r={f,stato:"ok",righe:[]};
-      const righe=(sp&&sp.righe)||[],tot=righe.reduce((t,x)=>t+(Number(x.importo)||0),0);
+      const righe=Array.isArray(sp&&sp.righe)?sp.righe.filter(x=>x&&typeof x==="object"):[],tot=righe.reduce((t,x)=>t+(Number(x.importo)||0),0);
       r.righe.push(righe.length+(righe.length===1?" spesa":" spese")+" · € "+tot.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2}));
       if(sp&&sp.consegnata)r.righe.push("✓ Consegnata "+(sp.consegnataAt?fa(sp.consegnataAt):""));
       else if(finito){const gg=Math.round((dOf(oggi)-dOf(j.al||j.dal))/864e5);r.stato=gg>2?"att":"info";r.righe.push("Da consegnare (servizio finito "+(gg===1?"ieri":gg+" giorni fa")+")");if(gg>2)pb("att","Buste","Busta n. "+num+" ("+(j.cliente||"")+", "+nomi+") da consegnare da "+gg+" giorni","Ricordalo all'autista: si consegna dall'app (Busta › Consegna la busta all'ufficio).");}
@@ -585,33 +596,38 @@ async function controlla(silenzioso){
 // ============================================================
 function chiedi(tit,testo,si){return new Promise(ok=>{const m=$("modale");$("modaleBox").innerHTML='<h3>'+esc(tit)+'</h3><p>'+esc(testo)+'</p><div class="tasti"><button class="btn ghost" data-m="no">Annulla</button><button class="btn" data-m="si">'+esc(si)+'</button></div>';m.hidden=false;
   m.onclick=e=>{const b=e.target.closest("[data-m]");if(!b&&e.target!==m)return;m.hidden=true;m.onclick=null;ok(!!b&&b.dataset.m==="si");};});}
+const LUCCHETTO_VECCHIO=180000; // dalla 1.3: 3 minuti, più del servizio 2.1 (2 minuti): la Diagnostica non toglie mai il lucchetto a un giro vivo
 // lo stato del servizio si cambia solo con il lucchetto preso (come fa il servizio a ogni giro): niente sovrapposizioni
 async function conLucchetto(nota,fn){
-  let preso=false;
-  for(let i=0;i<6&&!preso;i++){
-    if(await scrivi(LUCCHETTO,{da:new Date().toISOString(),chi:"diagnostica"},"add")){preso=true;break;}
+  let mio=false;
+  for(let i=0;i<6&&!mio;i++){
+    mio=await scrivi(LUCCHETTO,{da:new Date().toISOString(),chi:"diagnostica"},"add");if(mio)break;
     const x=await scaricaJson(LUCCHETTO),t=x&&x.j&&Date.parse(x.j.da);
-    if(!t||Date.now()-t>90000){await cancella(LUCCHETTO).catch(()=>{});continue;}
+    if(!x)continue; // tolto nel frattempo: si riprova subito
+    if(!t||Date.now()-t>LUCCHETTO_VECCHIO){await cancella(LUCCHETTO,x.rev).catch(()=>{});continue;}
     if(i<5)await attesa(3000);
   }
-  if(!preso)throw new Error("Il servizio sta lavorando in questo momento: riprova tra un minuto");
+  if(!mio)throw new Error("Il servizio sta lavorando in questo momento: riprova tra un minuto");
   try{
-    const x=await scaricaJson(STATO);if(!x||!x.j)throw new Error("Stato del servizio non trovato");
-    const st=x.j;fn(st);st.log=st.log||[];st.log.unshift(new Date().toISOString().slice(0,16)+" Diagnostica: "+nota);st.log=st.log.slice(0,30);
-    await scrivi(STATO,st);
-  }finally{await cancella(LUCCHETTO).catch(()=>{});}
+    for(let i=0;;i++){
+      const x=await scaricaJson(STATO);if(!x||!x.j)throw new Error("Stato del servizio non trovato");
+      const st=x.j;fn(st);st.log=st.log||[];st.log.unshift(new Date().toISOString().slice(0,16)+" Diagnostica: "+nota);st.log=st.log.slice(0,30);
+      if(await scrivi(STATO,st,x.rev?{".tag":"update",update:x.rev}:"overwrite"))break; // dalla 1.3: solo se il servizio non l'ha cambiato nel frattempo
+      if(i>=2)throw new Error("Il servizio ha appena aggiornato il suo stato: riprova tra un minuto");
+    }
+  }finally{await cancella(LUCCHETTO,typeof mio==="string"?mio:"").catch(()=>{});}
 }
 const RIP={
   rileggi:{t:"Far rileggere tutta la cartella?",d:"Al prossimo giro il servizio rilegge tutti i file della cartella (fogli, telefoni, crocette, conferme). Non manda notifiche doppie.",si:"Rileggi",
-    fa:()=>conLucchetto("il servizio rilegge tutta la cartella",st=>{st.cursor="";}),ok:"Fatto: il servizio rilegge tutto entro un paio di minuti"},
+    fa:()=>conLucchetto("il servizio rilegge tutta la cartella",st=>{st.cursor="";}),ok:"Fatto: il servizio rilegge tutto (qualche minuto: lo vedi in «File da rileggere»)"},
   coda:{t:"Svuotare le notifiche in attesa?",d:"Le notifiche non ancora partite vengono tolte e non partiranno più.",si:"Svuota",
     fa:()=>conLucchetto("tolte le notifiche in attesa",st=>{st.coda=[];}),ok:"Fatto: notifiche in attesa tolte"},
   riposi:{t:"Rimandare i riposi a tutti i telefoni?",d:"Al prossimo giro il servizio rilegge le Presenze e riscrive riposi e rimesse per tutti gli autisti. Non manda notifiche doppie.",si:"Rimanda",
     fa:()=>conLucchetto("riposi e rimesse da rimandare a tutti i telefoni",st=>{st.ponte=st.ponte||{};st.ponte.hashRiposi={};st.ponte.riposiAt=0;}),ok:"Fatto: i riposi ripartono entro un paio di minuti"},
   conferme:{t:"Ricopiare le conferme nelle Presenze?",d:"Al prossimo giro il servizio riscrive nell'archivio chi ha premuto OK sui riposi e sulle rimesse.",si:"Ricopia",
     fa:()=>conLucchetto("conferme dei riposi da ricopiare nelle Presenze",st=>{st.ponte=st.ponte||{};st.ponte.vistiHash="";}),ok:"Fatto: le conferme si ricopiano entro un paio di minuti"},
-  lucchetto:{t:"Togliere il lucchetto?",d:"Il lucchetto serve a non far lavorare il servizio due volte insieme. Se è rimasto preso da più di due minuti, toglierlo fa ripartire il servizio.",si:"Togli",
-    fa:async()=>{const x=await scaricaJson(LUCCHETTO);if(x&&x.j&&minuti(x.j.da)<2)throw new Error("Il lucchetto è appena stato preso: il servizio sta lavorando");await cancella(LUCCHETTO);},ok:"Fatto: lucchetto tolto"}
+  lucchetto:{t:"Togliere il lucchetto?",d:"Il lucchetto serve a non far lavorare il servizio due volte insieme. Se è rimasto preso da più di tre minuti, toglierlo fa ripartire il servizio.",si:"Togli",
+    fa:async()=>{const x=await scaricaJson(LUCCHETTO);if(!x)return;if(x.j&&minuti(x.j.da)<3)throw new Error("Il lucchetto è stato preso da poco: il servizio sta lavorando");await cancella(LUCCHETTO,x.rev);},ok:"Fatto: lucchetto tolto"}
 };
 async function ripara(k){
   // dalla 1.1: togliere un collegamento vecchio (o un telefono vecchio): file del telefono, iscrizione alle notifiche
@@ -631,7 +647,13 @@ async function ripara(k){
     const tel=k.slice(6),path="/telefoni/push/"+tel+".json",x=await scaricaJson(path);if(!x||!x.j)return toast("Iscrizione alle notifiche non trovata");
     const nome=x.j.autista||tel;
     if(!(await chiedi("Mandare una notifica di prova?","Sul telefono di "+nome+" arriva «Prova riuscita» entro un paio di minuti.","Manda")))return;
-    try{x.j.prova=new Date().toISOString();await scrivi(path,x.j);toast("Inviata: arriva sul telefono di "+nome+" entro un paio di minuti");}catch(e){toast("Non riuscita: "+e.message);}
+    try{
+      let fatto=false;
+      for(let i=0;i<3&&!fatto;i++){const y=await scaricaJson(path);if(!y||!y.j)return toast("Iscrizione alle notifiche non trovata");if(y.j.spento)return toast("Le notifiche di "+nome+" sono spente");
+        y.j.prova=new Date().toISOString();fatto=await scrivi(path,y.j,y.rev?{".tag":"update",update:y.rev}:"overwrite");if(!fatto)await attesa(1500);}
+      if(!fatto)throw new Error("il telefono sta scrivendo proprio adesso, riprova tra poco");
+      toast("Inviata: arriva sul telefono di "+nome+" entro un paio di minuti (poi in «Ultima notifica» vedi «Prova riuscita»)");
+    }catch(e){toast("Non riuscita: "+e.message);}
     return;
   }
   const r=RIP[k];if(!r)return;

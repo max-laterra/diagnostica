@@ -1,8 +1,8 @@
 # La Terra – Diagnostica
 
-**Versione 1.2** — 18 novembre 2026
+**Versione 1.3** — 20 novembre 2026
 
-Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.2».
+Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.3».
 
 Serve a controllare, da telefono o da computer, che funzioni tutto:
 app degli autisti, cartella Dropbox «Autisti La Terra», servizio notifiche su
@@ -10,6 +10,35 @@ Cloudflare e archivio dell'app Presenze (Supabase). Può anche fare qualche
 riparazione, sempre chiedendo conferma. L'Agenda non viene controllata.
 
 ---
+
+## Modifiche della versione 1.3 (bug-test completo)
+
+Va insieme al **servizio notifiche 2.1** e all'**app autisti 1.22** (funziona anche con il servizio 2.0).
+
+- **«Notifica di prova» sicura.** Il file del telefono si legge dopo aver premuto «Manda»
+  e si riscrive solo se il telefono non l'ha cambiato nel frattempo. Prima poteva
+  rimettere un'iscrizione vecchia e il telefono restava senza notifiche.
+- **Niente falso allarme «ferma sulla password»** quando l'autista è già stato ricollegato
+  con un codice QR nuovo: il telefono vecchio diventa «Era ferma sulla password: ora usa
+  un altro collegamento» con il tasto «Togli il telefono vecchio».
+- **Niente rosso fisso «Le notifiche non arrivano più»** quando l'autista ha già
+  riattivato le notifiche dopo un'iscrizione scaduta: compare «Notifiche riattivate…».
+- **«Fai rileggere tutta la cartella»**: nuova riga «File da rileggere» e un avviso giallo
+  mentre il servizio rilegge (prima diceva «entro un paio di minuti» anche quando ci
+  voleva molto di più).
+- **Lucchetto del servizio**: la Diagnostica lo considera dimenticato solo dopo 3 minuti e
+  lo toglie solo se è ancora quello che ha visto; lo stato del servizio si scrive solo se
+  il servizio non l'ha cambiato nel frattempo. Prima poteva togliere il lucchetto a un
+  giro ancora vivo (e far partire notifiche doppie).
+- **Data di pubblicazione dell'app** presa la prima volta che si vede una versione:
+  caricare su GitHub un altro file (per esempio il README) non fa più sembrare «non ha
+  ancora aperto l'app» chi in realtà apre ancora la versione vecchia.
+- **Orari del registro del servizio in ora italiana** (prima erano un'ora indietro, due
+  d'estate).
+- Un file spese scritto male non ferma più tutto il controllo; se nella pagina dell'app
+  non si trova il numero di versione compare «Non riesco a leggere la versione»; niente
+  doppio avviso per le «chiavi vecchie».
+- Prove: 71 controlli della 1.2 tutti superati, più le prove dei casi corretti.
 
 ## Modifiche della versione 1.2
 
