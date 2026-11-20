@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- La Terra – Diagnostica · versione 1.1 · 11 novembre 2026
+<!-- La Terra – Diagnostica · versione 1.2 · 18 novembre 2026
      Controlla app autisti, cartella Dropbox «Autisti La Terra», servizio notifiche (Cloudflare) e archivio Presenze (Supabase).
      Le impostazioni stanno nella pagina nascosta: 6 tocchi sulla scritta «Diagnostica» entro 4 secondi. -->
 <html lang="it">
@@ -122,7 +122,7 @@ details.sez[open]>summary .freccia{transform:rotate(90deg)}
 <script>
 (function(){
 "use strict";
-const VERSIONE="1.1";
+const VERSIONE="1.2";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
@@ -342,7 +342,9 @@ function analizza(R){
   const AU={};const au=(slug,nome)=>{slug=idDi(slug);if(!slug)return null;const a=AU[slug]||(AU[slug]={slug,nome:"",telefoni:[],push:[],fogli:[]});if(nome&&!a.nome)a.nome=String(nome);return a;};
   for(const t of R.telefoni){const j=t.j;if(t.nome===String(conn.p).toLowerCase()||/Servizio notifiche|Diagnostica/i.test(j.dispositivo||""))continue;const a=au(j.autista,j.autista);if(a)a.telefoni.push({p:t.nome,dispositivo:j.dispositivo||"",ultimo:j.ultimoAccesso||t.mod,collegato:j.collegatoAt||"",
     // dalla app 1.18: versione esatta e com'è andato l'ultimo aggiornamento
-    app:verOk(j.app)?String(j.app):"",sinc:String(j.aggiornatoAt||""),daInv:Number(j.daInviare)||0,problema:j.problema&&j.problema.t?{at:String(j.problema.at||""),t:String(j.problema.t).slice(0,160)}:null});}
+    app:verOk(j.app)?String(j.app):"",sinc:String(j.aggiornatoAt||""),daInv:Number(j.daInviare)||0,problema:j.problema&&j.problema.t?{at:String(j.problema.at||""),t:String(j.problema.t).slice(0,160)}:null,
+    // dalla app 1.20: da quando è ferma sulla schermata della password, e se il telefono protegge i dati dell'app
+    chiede:String(j.chiedePassword||""),protetti:typeof j.datiProtetti==="boolean"?j.datiProtetti:null});}
   for(const x of R.push){const j=x.j;const a=au(j.autistaId||j.autista,j.autista);if(a)a.push.push({tel:x.nome,spento:!!j.spento,domani:j.domani,at:j.at||x.mod,registrato:!!(st&&st.subs&&st.subs[x.nome]),chiaviVecchie:!!(st&&st.subs&&st.subs[x.nome]&&st.subs[x.nome].pub&&R.chiave&&st.subs[x.nome].pub!==R.chiave.pub),esito:st&&st.esiti&&st.esiti[x.nome]});}
   for(const x of R.visti){const a=au(x.nome,x.j.autista);if(a){a.visti=x.j;a.vistiMod=x.mod;}}
   for(const x of R.presenze){const a=au(x.nome);if(a)a.presenze=(x.j&&x.j.giorni)||{};}
@@ -383,13 +385,19 @@ function analizza(R){
         a.telefoni.forEach(t=>{
           if(t.vecchio){r.righe.push("📱 "+(t.dispositivo||"telefono")+" · telefono vecchio, non aperto "+dal(t.ultimo));r.azioni.push(["vecchio:"+t.p+":"+a.slug+":0","Togli il telefono vecchio"]);return;}
           r.righe.push("📱 "+(t.dispositivo||"telefono")+(t.app?" · app "+t.app:"")+" · ultima apertura "+fa(t.ultimo));
+          // dalla 1.2: app ferma sulla schermata della password = l'autista non vede i fogli nuovi
+          if(t.chiede){r.righe.push("🔒 Ferma sulla password "+dal(t.chiede));segna("err");
+            pb("err","Telefoni","L'app di "+nome+" è ferma sulla password "+dal(t.chiede)+": non vede i fogli nuovi","Chiamalo: deve aprire l'app e scrivere la sua password. Con l'app 1.20 la password si chiede solo dopo «Esci» (pagina nascosta) o con un collegamento nuovo.");}
+          if(t.protetti===true)r.righe.push("🛡 Dati dell'app protetti dal telefono");
+          else if(t.protetti===false){r.righe.push("⚠ Dati dell'app non protetti dal telefono");
+            pb("info","Telefoni","Il telefono di "+nome+" non protegge i dati dell'app: se manca spazio, Android potrebbe cancellarli e servirebbe di nuovo il codice QR","Metti l'app sulla schermata Home e attiva le notifiche (6 tocchi su «Profilo» › Impostazioni): di solito così il telefono la protegge da solo.");}
           if(!t.app)return;
           // dalla app 1.18 il telefono dice com'è andato l'ultimo aggiornamento
           const finito=t.sinc&&t.sinc>=t.ultimo;
           r.righe.push("↻ "+(finito?"Aggiornato ":"Ultimo aggiornamento riuscito ")+(t.sinc?fa(t.sinc):"mai")+" · "+(t.daInv?t.daInv+(t.daInv===1?" cosa da inviare":" cose da inviare"):"niente da inviare"));
           if(t.problema)r.righe.push("✕ Ultimo problema "+fa(t.problema.at)+": "+t.problema.t);
           if(t.problema&&!finito&&minuti(t.problema.at)<3*1440){segna("att");pb("att","Telefoni","Il telefono di "+nome+" non riesce ad aggiornarsi con l'ufficio: "+t.problema.t,"Fagli aprire l'app con internet e toccare «Aggiorna e invia adesso» nel Profilo. Se il problema resta, prendi nota del testo: serve per capire la causa.");}
-          else if(!finito&&minuti(t.ultimo)>15&&minuti(t.ultimo)<3*1440){segna("info");pb("info","Telefoni","Il telefono di "+nome+" si è aperto "+fa(t.ultimo)+" ma non ha finito di aggiornarsi","Succede se l'app viene chiusa subito o non c'è campo. Se si ripete, fagli toccare «Aggiorna e invia adesso» nel Profilo.");}
+          else if(!t.chiede&&!finito&&minuti(t.ultimo)>15&&minuti(t.ultimo)<3*1440){segna("info");pb("info","Telefoni","Il telefono di "+nome+" si è aperto "+fa(t.ultimo)+" ma non ha finito di aggiornarsi","Succede se l'app viene chiusa subito o non c'è campo. Se si ripete, fagli toccare «Aggiorna e invia adesso» nel Profilo.");}
         });
         const gg=minuti(ult)/1440;if(gg>3&&prossimi(a,3).length){segna("att");pb("att","Telefoni",nome+" non apre l'app da "+Math.round(gg)+" giorni e ha servizi a breve","Chiamalo: deve aprire l'app per ricevere i fogli.");}
       }

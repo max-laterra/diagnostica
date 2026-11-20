@@ -1,13 +1,27 @@
 # La Terra – Diagnostica
 
-**Versione 1.1** — 11 novembre 2026
+**Versione 1.2** — 18 novembre 2026
 
-Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.1».
+Il numero di versione è scritto in fondo alla pagina: «La Terra · Diagnostica · versione 1.2».
 
 Serve a controllare, da telefono o da computer, che funzioni tutto:
 app degli autisti, cartella Dropbox «Autisti La Terra», servizio notifiche su
 Cloudflare e archivio dell'app Presenze (Supabase). Può anche fare qualche
 riparazione, sempre chiedendo conferma. L'Agenda non viene controllata.
+
+---
+
+## Modifiche della versione 1.2
+
+- **App ferma sulla password** (con l'app autisti 1.20): problema **rosso**
+  «L'app di … è ferma sulla password dal …: non vede i fogli nuovi», con «Cosa
+  fare: chiamalo, deve aprire l'app e scrivere la sua password». Nella scheda
+  dell'autista: «🔒 Ferma sulla password dal …».
+- **Dati protetti**: nella scheda dell'autista «🛡 Dati dell'app protetti dal
+  telefono» oppure «⚠ Dati dell'app non protetti dal telefono». Se non sono
+  protetti compare un'informazione (blu) con cosa fare: mettere l'app sulla
+  schermata Home e attivare le notifiche.
+- Prove: 71 controlli (i 66 della 1.1 più 5 nuovi), tutti superati.
 
 ---
 
@@ -158,7 +172,7 @@ Su ogni dispositivo (telefono e computer) il primo avvio si fa una volta.
   aggiunge un servizio, va aggiunto lì.
 
 ## Collegata a
-- App autisti **1.18** (con la 1.13–1.17 la versione si legge dalle conferme dei
+- App autisti **1.20** (dalla 1.18 versione esatta per telefono, dalla 1.20 password e dati protetti; con la 1.13–1.17 la versione si legge dalle conferme dei
   riposi, come nella 1.0; le precedenti si vedono come «1.12 o precedente»).
 - Servizio notifiche **1.11** (con la 1.9 mancano versione del servizio ed
   esito dell'ultima notifica per telefono).
